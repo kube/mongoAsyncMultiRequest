@@ -2,9 +2,9 @@
                                                      /*#######.
     mongoAsyncMultiRequest.js                       ########",#:
                                                   #########',##".
-    KUBE     : www.kube.io                       ##"##"##".##'.##.
-    Created  : May, 3rd 2014 23:35:25             ## ## ## # ##".#.
-    Modified : May, 4th 2014 23:55:57              ## ## ## ## ##.
+    KUBE     : www.kube.io                       ##'##'##".##',##.
+    Created  : May, 3rd 2014 23:35:25             ## ## ## # ##",#.
+    Modified : May, 4th 2014 23:55:57              ## ## ## ## ##'
                                                     ## ## ## :##
                                                      ## ## ##*/
 
@@ -49,9 +49,6 @@ function mongoAsyncMultiRequest(url, requests, callback) {
             throw new Error('Request `' + name + '` is not valid request');
     }
 
-    for (var i in requests)
-        this.addRequest(i, requests[i]);
-
     function isCompleted(db) {
         for (var i in _requests) {
             if (!_requests[i].finished)
@@ -75,7 +72,7 @@ function mongoAsyncMultiRequest(url, requests, callback) {
                 cancelRequest(_requests[request.promises[i]]);
     }
 
-    function runTask(db, name) {
+    function runRequest(db, name) {
         _requests[name](db, (function (name) {
             return function(err, results) {
                 if (err)
@@ -88,7 +85,7 @@ function mongoAsyncMultiRequest(url, requests, callback) {
                     _requests[name].finished = 1;
                     _results[name] = results;
                     for (var i in _requests[name].promises)
-                        runTask(db, _requests[name].promises[i]);
+                        runRequest(db, _requests[name].promises[i]);
                 }
                 if (isCompleted(db))
                     callback(_errors, _results);
@@ -108,7 +105,9 @@ function mongoAsyncMultiRequest(url, requests, callback) {
                     runTask(db, i);
         });
     }
-    return 0;
+
+    for (var i in requests)
+        this.addRequest(i, requests[i]);
 }
 
 module.exports = mongoAsyncMultiRequest;
