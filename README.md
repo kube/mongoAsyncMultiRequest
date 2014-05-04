@@ -3,7 +3,7 @@ Mongo Asynchronous Multiple Requests
 
 This class will permit you to get the result of multiple MongoDB requests in one callback function, very easily.
 
-```
+```js
     var mongoAsyncMultiRequest = require('./mongoAsyncMultiRequest.js');
 
     var request = new mongoAsyncMultiRequest("mongodb://127.0.0.1:27017/test",
