@@ -1,40 +1,59 @@
 
                                                      /*#######.
-    mongoAsyncMultiRequest.js                       ########.,#:
-                                                  ######### ,##'.
-    KUBE     : www.kube.io                       ## ## ## .##'.##.
+    mongoAsyncMultiRequest.js                       ########",#:
+                                                  #########',##".
+    KUBE     : www.kube.io                       ##"##"##".##'.##.
     Created  : May, 3rd 2014 23:35:25             ## ## ## # ##".#.
-    Modified : May, 4th 2014 03:27:12              ## ## ## ## ##.
+    Modified : May, 4th 2014 23:55:57              ## ## ## ## ##.
                                                     ## ## ## :##
-                                                     ## ## #*/
+                                                     ## ## ##*/
 
 var MongoClient = require('mongodb').MongoClient;
 
-function mongoAsyncMultiRequest(credentials, requests, callback) {
+function mongoAsyncMultiRequest(url, requests, callback) {
     var self = this;
 
     var _results = new Array();
     var _requests = new Array();
+    var _errors = null;
 
-    if (typeof callback != 'function') {
-        console.error('Invalid callback function');
-        return 1;
+    if (typeof callback != 'function')
+        throw new Error('Invalid callback function');
+
+    function addPromise(request, promise)
+    {
+        if (!request.promises)
+            request.promises = new Array();
+        request.promises.push(promise);
     }
 
-    for (var i in requests) {
-        if (typeof requests[i] == 'function') {
-            _requests[i] = requests[i];
-            _requests[i].finished = 0;
+    this.addRequest = function(name, request)
+    {
+        if (typeof request == 'function' ||
+            typeof request.task == 'function') {
+
+            _requests[name] = request.task ? request.task : request;
+            if (request.dependency) {
+                if (_requests[request.dependency]) {
+                    addPromise(_requests[request.dependency], name);
+                    _requests[name].dependency = request.dependency;
+                }
+                else
+                    throw new Error('Could not add request `' + name
+                        + '`:\n       Dependency `' + request.dependency
+                        + '` doesn\'t exist!');
+            }
+            _requests[name].finished = 0;
         }
-        else {
-            console.error('Request at index `' + i + '` is not valid request');
-            return 1;
-        }
+        else
+            throw new Error('Request `' + name + '` is not valid request');
     }
+
+    for (var i in requests)
+        this.addRequest(i, requests[i]);
 
     function isCompleted(db) {
-        for (var i in _requests)
-        {
+        for (var i in _requests) {
             if (!_requests[i].finished)
                 return 0;
         }
@@ -42,30 +61,53 @@ function mongoAsyncMultiRequest(credentials, requests, callback) {
         return 1;
     }
 
-    this.runRequests = function() {
-        MongoClient.connect(credentials, function(err, db) {
+    function addError(requestName, err) {
+        if (_errors === null)
+            _errors = new Array();
+        _errors[requestName] = err;
+    }
+
+    function cancelRequest(request)
+    {
+        request.finished = 1;
+        if (request.promises)
+            for (var i in request.promises)
+                cancelRequest(_requests[request.promises[i]]);
+    }
+
+    function runTask(db, name) {
+        _requests[name](db, (function (name) {
+            return function(err, results) {
+                if (err)
+                {
+                    cancelRequest(_requests[name]);
+                    addError(name, err);
+                }
+                else
+                {
+                    _requests[name].finished = 1;
+                    _results[name] = results;
+                    for (var i in _requests[name].promises)
+                        runTask(db, _requests[name].promises[i]);
+                }
+                if (isCompleted(db))
+                    callback(_errors, _results);
+            }
+        })(name), _results);
+    }
+
+    this.run = function() {
+        MongoClient.connect(url, function(err, db) {
             if (err) throw err;
 
             for (var i in _requests)
                 _requests[i].finished = 0;
 
-            for (var i in _requests) {
-                _requests[i](db, (function (i) {
-                    return function(err, results) {
-                        if (err)
-                           callback(err);
-                        else {
-                            _results[i] = results;
-                            _requests[i].finished = 1;
-                            if (isCompleted(db))
-                                callback(null, _results);
-                        }
-                    }
-                })(i));
-            }
+            for (var i in _requests)
+                if (!_requests[i].dependency)
+                    runTask(db, i);
         });
     }
-    this.runRequests();
     return 0;
 }
 
