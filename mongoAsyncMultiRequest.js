@@ -32,16 +32,20 @@ function mongoAsyncMultiRequest(url, requests, callback) {
         if (typeof request == 'function' ||
             typeof request.task == 'function') {
 
-            _requests[name] = request.task ? request.task : request;
-            if (request.dependency) {
-                if (_requests[request.dependency]) {
-                    addPromise(_requests[request.dependency], name);
-                    _requests[name].dependency = request.dependency;
+            _requests[name] = typeof request.task == 'function' ?
+                                request.task : request;
+            if (request.dependencies) {
+                for (var i in request.dependencies)
+                {
+                    if (_requests[request.dependencies[i]]) {
+                        addPromise(_requests[request.dependencies[i]], name);
+                    }
+                    else
+                        throw new Error('Could not add request `' + name
+                            + '`:\n       Dependency `' + request.dependency
+                            + '` doesn\'t exist!');
                 }
-                else
-                    throw new Error('Could not add request `' + name
-                        + '`:\n       Dependency `' + request.dependency
-                        + '` doesn\'t exist!');
+                _requests[name].dependencies = request.dependencies;
             }
             _requests[name].finished = 0;
         }
@@ -64,6 +68,14 @@ function mongoAsyncMultiRequest(url, requests, callback) {
         _errors[requestName] = err;
     }
 
+    function completedDependencies(request)
+    {
+        for (var i in request.dependencies)
+            if (!_requests[request.dependencies[i]].finished)
+                return 0;
+        return 1;
+    }
+
     function cancelRequest(request)
     {
         request.finished = 1;
@@ -73,22 +85,24 @@ function mongoAsyncMultiRequest(url, requests, callback) {
     }
 
     function runRequest(db, name, variables) {
-        _requests[name](db, (function (name) {
-            return function(err, results) {
-                if (err) {
-                    cancelRequest(_requests[name]);
-                    addError(name, err);
+        if (completedDependencies(_requests[name]))
+            _requests[name](db, (function (name) {
+                return function(err, results) {
+                    if (err) {
+                        cancelRequest(_requests[name]);
+                        addError(name, err);
+                    }
+                    else {
+                        _requests[name].finished = 1;
+                        _results[name] = results;
+                        for (var i in _requests[name].promises)
+                            runRequest(db, _requests[name].promises[i],
+                                variables);
+                    }
+                    if (isCompleted(db))
+                        callback(_errors, _results);
                 }
-                else {
-                    _requests[name].finished = 1;
-                    _results[name] = results;
-                    for (var i in _requests[name].promises)
-                        runRequest(db, _requests[name].promises[i], variables);
-                }
-                if (isCompleted(db))
-                    callback(_errors, _results);
-            }
-        })(name), variables, _results);
+            })(name), variables, _results);
     }
 
     this.run = function(variables) {
