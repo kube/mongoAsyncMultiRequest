@@ -8,47 +8,43 @@
                                                     ## ## ## :##
                                                      ## ## ##*/
 
-var mongoAsyncMultiRequest = require('./mongoAsyncMultiRequest.js');
+var asyncMultiRequest = require('./mongoAsyncMultiRequest.js');
 
-var request = new mongoAsyncMultiRequest("mongodb://127.0.0.1:27017/test",
+var task = new asyncMultiRequest("mongodb://127.0.0.1:27017/test",
 {
-    cleanUsers : function(db, callback)
-    {
-        db.collection('users').remove(callback);
-    },
+    insertUser : function(db, callback, variables) {
 
-    cleanTickets : function(db, callback)
-    {
-        db.collection('tickets').remove(callback);
-    },
-
-    insertUser : function(db, callback) {
         var user = {
-            firstName: "Hello",
-            lastName: "World"
-        };
+            firstName : variables.firstName,
+            lastName : variables.lastName
+        }
         db.collection('users').insert(user, null, callback);
     },
 
     insertTicket : {
         dependency : 'insertUser',
-        task : function(db, callback, result) {
+        task : function(db, callback, variables, results) {
 
-            console.log(result.insertUser);
             var ticket = {
-                author: "Kube Khrm",
-                Message: "Hello Everybody!"
+                author: results.insertUser[0]._id,
+                message: variables.message
             };
             db.collection('tickets').insert(ticket, null, callback);
         }
     },
 
-    users : function(db, callback) {
-        db.collection('users').find().toArray(callback);
+    users : {
+        dependency : 'insertUser',
+        task : function(db, callback, variables) {
+            db.collection('users').find().toArray(callback);
+        }
     },
 
-    tickets : function(db, callback) {
-        db.collection('tickets').find().toArray(callback);
+    tickets : {
+        dependency : 'insertTicket',
+        task : function(db, callback, variables) {
+            db.collection('tickets').find().toArray(callback);
+        }
     }
 
 }, function(err, results) {
@@ -58,4 +54,7 @@ var request = new mongoAsyncMultiRequest("mongodb://127.0.0.1:27017/test",
     console.log(results.tickets);
 });
 
-request.run();
+task.run({
+    firstName : "John",
+    lastName : "Doe",
+    message : "Hello Everybody!" });

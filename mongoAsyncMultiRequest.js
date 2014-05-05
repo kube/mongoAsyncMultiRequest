@@ -72,28 +72,26 @@ function mongoAsyncMultiRequest(url, requests, callback) {
                 cancelRequest(_requests[request.promises[i]]);
     }
 
-    function runRequest(db, name) {
+    function runRequest(db, name, variables) {
         _requests[name](db, (function (name) {
             return function(err, results) {
-                if (err)
-                {
+                if (err) {
                     cancelRequest(_requests[name]);
                     addError(name, err);
                 }
-                else
-                {
+                else {
                     _requests[name].finished = 1;
                     _results[name] = results;
                     for (var i in _requests[name].promises)
-                        runRequest(db, _requests[name].promises[i]);
+                        runRequest(db, _requests[name].promises[i], variables);
                 }
                 if (isCompleted(db))
                     callback(_errors, _results);
             }
-        })(name), _results);
+        })(name), variables, _results);
     }
 
-    this.run = function() {
+    this.run = function(variables) {
         MongoClient.connect(url, function(err, db) {
             if (err) throw err;
 
@@ -102,7 +100,7 @@ function mongoAsyncMultiRequest(url, requests, callback) {
 
             for (var i in _requests)
                 if (!_requests[i].dependency)
-                    runTask(db, i);
+                    runRequest(db, i, variables);
         });
     }
 
